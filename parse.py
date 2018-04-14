@@ -1,8 +1,7 @@
-from BeautifulSoup import BeautifulSoup
-import urllib2
+from bs4 import BeautifulSoup
+import urllib.request
 import sys
-
-
+import re
 
 def main():
     #python parse.py -s fall -y 2018 -c DSHS,DVUP
@@ -28,20 +27,107 @@ def main():
         url = 'https://app.testudo.umd.edu/soc/gen-ed/' + year + season + '/' + first_gened
 
         try:
-            response = urllib2.urlopen(url)
+            with urllib.request.urlopen(url) as response:
+                html = response.read()
+                html = html.decode("utf8")
+                response.close()
         except:
-            sys.exit("are you sure you entered the year and geneds correctly?\nare those values valid?")
-        
-        html = response.read()
-        print(html)
-        parsed_html = BeautifulSoup(html)
-        #print parsed_html.body.find('div', attrs={'class':'toc'})
+            sys.exit("Are you sure you entered the year and geneds correctly?\nAre those values valid?")
 
-def switch(season):
+        searchObj = re.search( r'No courses matched your search filters above.', html)
+        if searchObj:
+            sys.exit("No results found.\nAre you sure you entered the correct information?")
+        else:
+            print("parsing html...")
+
+        parsed_html = BeautifulSoup(html, "lxml")
+        classes = parsed_html.body.findAll('div', {'class':'course'})
+
+        filtered_classes = filtering(classes, geneds)
+        print("finding avg GPA for these filtered classes...")
+        gpa = {}
+        students = {}
+        for x in filtered_classes:
+            url = 'https://planetterp.com/course/' + x
+            try:
+                with urllib.request.urlopen(url) as response:
+                    html = response.read()
+                    html = html.decode("utf8")
+                    response.close()
+            except:
+                print("couldn't find course", x, "on planet terp")
+                continue
+
+            search = re.search(r'Average GPA: (.*) between (.*) students', html)
+            if search:
+                gpa[x] = search.group(1)
+                students[x] = search.group(2)
+            else:
+                continue
+
+        sorted_by_gpa = [(k, gpa[k]) for k in sorted(gpa, key=gpa.get, reverse=True)]
+        i = 0
+        for k,v in sorted_by_gpa:
+            if i == 0:
+                print("Best class:", k + ",\nAverage GPA:", v, "among", students[k],"students\n")
+            else:
+                next = input("Enter y to see next best class to take\nEnter something else to exit program\n")
+                if next.lower() == 'y':
+                    print("For class", k + ",\nAverage GPA:", v, "among", students[k],"students\n")
+                else:
+                    sys.exit("bye...")
+            i += 1
+        sys.exit("That was all I found\nsee you next semester!")
+
+        #print(result)
+
+def filtering(classes, geneds):
+    print("filtering through", len(classes), "classes...")
+    list = []
+
+    for clss in classes:
+        html = str(clss)
+        splitObj = re.search('<span class="course-info-label">(.*)"\s+or\s+"(.*)' , html)
+
+        if splitObj:# if current course gened description contains 'or'
+            left = splitObj.group(1)
+            right = splitObj.group(2)
+            leftCheck = 0;
+            rightCheck = 0;
+            for gened in geneds:#count how many geneds left side of or satisfies
+                search = re.search(gened, left)
+                if search:
+                    leftCheck += 1
+
+            for gened in geneds:#count how many geneds right side of or satisfies
+                search = re.search(gened, right)
+                if search:
+                    rightCheck += 1
+
+            if leftCheck == len(geneds):
+                search = re.search(r'<div class="course-id">(.*)</div>', html)
+                list.append(search.group(1))
+            elif rightCheck == len(geneds):
+                search = re.search(r'<div class="course-id">(.*)</div>', html)
+                list.append(search.group(1))
+        else:
+            check = 0;
+            for gened in geneds:
+                search = re.search(gened, html)
+                if search:
+                    check += 1
+            if check == len(geneds):#if all gened requirements are met
+                search = re.search(r'<div class="course-id">(.*)</div>', html)
+                list.append(search.group(1))
+
+    return list
+
+def switch(season):#switch statement for season
     return {
         'fall': '08',
         'summer': '05',
         'spring': '01',
+        'winter': '12',
     }[season.lower()]
 
 if __name__ == "__main__":
