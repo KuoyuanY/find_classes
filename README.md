@@ -1,7 +1,7 @@
 # find_classes
 Finds easiest gen ed classes from UMD schedule website
 
-# setup
+## setup
 git clone this repository
 ```
 git clone https://github.com/yellgreniff/find_classes.git
@@ -14,7 +14,7 @@ download python3 first
 
 then install beautifulSoup4 and urllib using pip/pip3
 
-# usage
+## usage
 ```
 python3 parse.py -s fall -y 2018 -c DSHU,DVUP
 ```
