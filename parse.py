@@ -48,6 +48,8 @@ def main():
         gpa = {}
         students = {}
         for x in filtered_classes:
+            print('.', end="")
+            sys.stdout.flush()
             url = 'https://planetterp.com/course/' + x
             try:
                 with urllib.request.urlopen(url) as response:
@@ -64,7 +66,7 @@ def main():
                 students[x] = search.group(2)
             else:
                 continue
-
+        print(" ")
         sorted_by_gpa = [(k, gpa[k]) for k in sorted(gpa, key=gpa.get, reverse=True)]
         i = 0
         for k,v in sorted_by_gpa:
