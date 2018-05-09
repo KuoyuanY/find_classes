@@ -12,7 +12,7 @@ cd find_classes
 ```
 download python3 first
 
-then install beautifulSoup4 and urllib using pip/pip3
+then install beautifulSoup4 using pip/pip3
 
 ## usage
 ```
