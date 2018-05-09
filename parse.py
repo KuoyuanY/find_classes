@@ -2,9 +2,15 @@ from bs4 import BeautifulSoup
 import urllib.request
 import sys
 import re
+import threading
+
+gpa = {}
+students = {}
+list = []
+threadLock = threading.Lock()
 
 def main():
-    #python parse.py -s fall -y 2018 -c DSHS,DVUP
+    #python3 parse.py -s fall -y 2018 -c DSHS,DVUP
     #-s : season, eg. fall, spring, summer, winter
     #-y : year, eg. 2018, 2019, etc
     #-c : gen ed categories, eg. DVUP, DSHS, etc. SEPARATED BY comma
@@ -30,7 +36,6 @@ def main():
             with urllib.request.urlopen(url) as response:
                 html = response.read()
                 html = html.decode("utf8")
-                response.close()
         except:
             sys.exit("Are you sure you entered the year and geneds correctly?\nAre those values valid?")
 
@@ -43,30 +48,20 @@ def main():
         parsed_html = BeautifulSoup(html, "lxml")
         classes = parsed_html.body.findAll('div', {'class':'course'})
 
-        filtered_classes = filtering(classes, geneds)
-        print("finding avg GPA for these filtered classes...")
-        gpa = {}
-        students = {}
-        for x in filtered_classes:
-            print('.', end="")
-            sys.stdout.flush()
-            url = 'https://planetterp.com/course/' + x
-            try:
-                with urllib.request.urlopen(url) as response:
-                    html = response.read()
-                    html = html.decode("utf8")
-                    response.close()
-            except:
-                print("couldn't find course", x, "on planet terp")
-                continue
+        filtering(classes, geneds)
+        filtered_classes = list
+        print("finding average gpa for each filtered class...")
 
-            search = re.search(r'Average GPA: (.*) between (.*) students', html)
-            if search:
-                gpa[x] = search.group(1)
-                students[x] = search.group(2)
-            else:
-                continue
-        print(" ")
+        threads = []
+
+        for x in filtered_classes:#multithreading
+            thread = threading.Thread(target=planetTerp, args=(x,))
+            thread.start()
+            threads.append(thread)
+
+        for t in threads:
+            t.join()
+
         sorted_by_gpa = [(k, gpa[k]) for k in sorted(gpa, key=gpa.get, reverse=True)]
         i = 0
         for k,v in sorted_by_gpa:
@@ -83,46 +78,76 @@ def main():
 
         #print(result)
 
+def planetTerp(clas):
+    global gpa
+    global students
+    url = 'https://planetterp.com/course/' + clas
+    try:#reading planet terp avg gpa
+        with urllib.request.urlopen(url) as response:
+            html = response.read()
+            html = html.decode("utf8")
+            search = re.search(r'Average GPA: (.*) between (.*) students', html)
+            if search:
+                threadLock.acquire()#synchronize update on gpa and students
+                gpa[clas] = search.group(1)
+                students[clas] = search.group(2)
+                threadLock.release()#release lock
+    except:
+        print("couldn't find course", clas, "on planet terp")
+
+def check(geneds, clss):
+    html = str(clss)
+    splitObj = re.search('<span class="course-info-label">(.*)"\s+or\s+"(.*)' , html)
+
+    if splitObj:# if current course gened description contains 'or'
+        left = splitObj.group(1)
+        right = splitObj.group(2)
+        leftCheck = 0;
+        rightCheck = 0;
+        for gened in geneds:#count how many geneds left side of or satisfies
+            search = re.search(gened, left)
+            if search:
+                leftCheck += 1
+
+        for gened in geneds:#count how many geneds right side of or satisfies
+            search = re.search(gened, right)
+            if search:
+                rightCheck += 1
+
+        if leftCheck == len(geneds):
+            search = re.search(r'<div class="course-id">(.*)</div>', html)
+            threadLock.acquire()#synchronize update on list
+            list.append(search.group(1))
+            threadLock.release()
+        elif rightCheck == len(geneds):
+            search = re.search(r'<div class="course-id">(.*)</div>', html)
+            threadLock.acquire()#synchronize update on list
+            list.append(search.group(1))
+            threadLock.release()
+    else:
+        check = 0;
+        for gened in geneds:
+            search = re.search(gened, html)
+            if search:
+                check += 1
+        if check == len(geneds):#if all gened requirements are met
+            search = re.search(r'<div class="course-id">(.*)</div>', html)
+            threadLock.acquire()#synchronize update on list
+            list.append(search.group(1))
+            threadLock.release()
+
 def filtering(classes, geneds):
     print("filtering through", len(classes), "classes...")
-    list = []
+    sys.stdout.flush()
+    threads = []
 
     for clss in classes:
-        html = str(clss)
-        splitObj = re.search('<span class="course-info-label">(.*)"\s+or\s+"(.*)' , html)
+        thread = threading.Thread(target=check, args=(geneds, clss))
+        thread.start()
+        threads.append(thread)
 
-        if splitObj:# if current course gened description contains 'or'
-            left = splitObj.group(1)
-            right = splitObj.group(2)
-            leftCheck = 0;
-            rightCheck = 0;
-            for gened in geneds:#count how many geneds left side of or satisfies
-                search = re.search(gened, left)
-                if search:
-                    leftCheck += 1
-
-            for gened in geneds:#count how many geneds right side of or satisfies
-                search = re.search(gened, right)
-                if search:
-                    rightCheck += 1
-
-            if leftCheck == len(geneds):
-                search = re.search(r'<div class="course-id">(.*)</div>', html)
-                list.append(search.group(1))
-            elif rightCheck == len(geneds):
-                search = re.search(r'<div class="course-id">(.*)</div>', html)
-                list.append(search.group(1))
-        else:
-            check = 0;
-            for gened in geneds:
-                search = re.search(gened, html)
-                if search:
-                    check += 1
-            if check == len(geneds):#if all gened requirements are met
-                search = re.search(r'<div class="course-id">(.*)</div>', html)
-                list.append(search.group(1))
-
-    return list
+    for t in threads:#wait for threads to finish
+        t.join()
 
 def switch(season):#switch statement for season
     return {
